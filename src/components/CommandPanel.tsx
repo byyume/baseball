@@ -133,27 +133,35 @@ interface PitchingPanelProps {
   onChange: (cmd: PitchingCommand) => void
   onConfirm: () => void
   onChangePitcher: () => void
+  onPickoff: (base: 'first' | 'second' | 'third') => void
+  bases: BaseState
   isDisabled: boolean
   playerColor: TeamColor
   pitcherName: string
   pitcherEra: number
 }
 
-const PITCHING_CMDS: { cmd: PitchingCommand; label: string; emoji: string; desc: string }[] = [
-  { cmd: 'ATTACK',  label: '정면승부', emoji: '🔥', desc: '공격적 투구' },
-  { cmd: 'CAREFUL', label: '신중하게', emoji: '🎯', desc: '볼 위험 줄임' },
-  { cmd: 'IBB',     label: '고의사구', emoji: '🚶', desc: '의도적 4구' },
+const PITCHING_CMDS: { cmd: PitchingCommand; label: string; emoji: string }[] = [
+  { cmd: 'ATTACK',  label: '정면승부', emoji: '🔥' },
+  { cmd: 'CAREFUL', label: '신중하게', emoji: '🎯' },
+  { cmd: 'IBB',     label: '고의사구', emoji: '🚶' },
 ]
 
+const BASE_LABELS: Record<'first' | 'second' | 'third', string> = {
+  first: '1루', second: '2루', third: '3루',
+}
+
 export function PitchingCommandPanel({
-  selected, onChange, onConfirm, onChangePitcher, isDisabled, playerColor, pitcherName, pitcherEra
+  selected, onChange, onConfirm, onChangePitcher, onPickoff,
+  bases, isDisabled, playerColor, pitcherName, pitcherEra
 }: PitchingPanelProps) {
   const hex = getTeamColorHex(playerColor)
+  const hasRunners = !!(bases.first || bases.second || bases.third)
 
   return (
     <div className="flex flex-col gap-2.5">
       <div className="grid grid-cols-3 gap-1.5">
-        {PITCHING_CMDS.map(({ cmd, label, emoji, desc }) => {
+        {PITCHING_CMDS.map(({ cmd, label, emoji }) => {
           const active = selected === cmd
           return (
             <button
@@ -170,6 +178,25 @@ export function PitchingCommandPanel({
           )
         })}
       </div>
+
+      {/* Pickoff buttons — only when runners are on base */}
+      {hasRunners && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-gray-500">견제구:</span>
+          {(['first', 'second', 'third'] as const).map(base => bases[base] ? (
+            <button
+              key={base}
+              onClick={() => onPickoff(base)}
+              disabled={isDisabled}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold border border-gray-600 bg-gray-900
+                text-gray-300 hover:border-yellow-600 hover:text-yellow-300 active:scale-95
+                transition-all disabled:opacity-40"
+            >
+              ✋ {BASE_LABELS[base]}
+            </button>
+          ) : null)}
+        </div>
+      )}
 
       <button
         onClick={onChangePitcher}

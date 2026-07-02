@@ -788,6 +788,70 @@ export function simulateAtBatFinal(
   return { kind: 'AT_BAT_OVER', displayText: getBigResultText(res.type, boostedBatter), displayKind: dispKind, atBatResult: res, newBalls: balls, newStrikes: strikes }
 }
 
+// ─── Pickoff ─────────────────────────────────────────────────────
+
+export function simulatePickoff(
+  game: GameState,
+  base: 'first' | 'second' | 'third',
+): { result: 'safe' | 'out' | 'error'; newGame: GameState } {
+  const runner = game.bases[base]
+  if (!runner) {
+    return {
+      result: 'safe',
+      newGame: { ...game, phase: 'SHOW_PITCH', lastPitch: { text: '견제 — 주자 없음', kind: 'ball', isAtBatOver: false } },
+    }
+  }
+
+  const roll = rand()
+  if (roll < 0.20) {
+    const newBases = { ...game.bases, [base]: null }
+    const newOuts = game.outs + 1
+    const text = `${runner.name} 견제 아웃!`
+    const phase: GamePhase = newOuts >= 3 ? 'BETWEEN_HALF' : 'SHOW_PITCH'
+    return {
+      result: 'out',
+      newGame: checkGameOver({
+        ...game,
+        bases: newBases,
+        outs: newOuts,
+        phase,
+        lastPitch: { text, kind: 'out', isAtBatOver: false },
+        events: [makeEvent(text, 'out'), ...game.events].slice(0, 30),
+      }),
+    }
+  }
+
+  if (roll < 0.30) {
+    const ORDER = ['first', 'second', 'third'] as const
+    const idx = ORDER.indexOf(base)
+    const newBases = { ...game.bases }
+    if (idx < 2 && !game.bases[ORDER[idx + 1]]) {
+      newBases[base] = null
+      newBases[ORDER[idx + 1]] = runner
+    }
+    const text = `견제 에러! ${runner.name} 진루`
+    return {
+      result: 'error',
+      newGame: {
+        ...game,
+        bases: newBases,
+        phase: 'SHOW_PITCH',
+        lastPitch: { text, kind: 'steal', isAtBatOver: false },
+        events: [makeEvent(text, 'info'), ...game.events].slice(0, 30),
+      },
+    }
+  }
+
+  return {
+    result: 'safe',
+    newGame: {
+      ...game,
+      phase: 'SHOW_PITCH',
+      lastPitch: { text: `${runner.name} 귀루`, kind: 'ball', isAtBatOver: false },
+    },
+  }
+}
+
 function resolveBuntFinal(batter: Batter, bases: BaseState, outs: number, balls: number, strikes: number): SinglePitchResult {
   const r = rand()
   if (r < 0.08) {

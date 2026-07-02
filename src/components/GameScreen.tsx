@@ -1,14 +1,15 @@
 'use client'
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import type {
   GameState, AppState, BattingCommand, PitchingCommand, RunnerCommand, SeriesState
 } from '@/lib/types'
 import {
   initGameState, getCurrentBatter, getCurrentPitcher,
   applyPitchResult, startNextHalf, simulateSinglePitch, simulateAtBatFinal,
-  generateRandomCount, isGameOver, changePitcher, makeEvent,
+  generateRandomCount, isGameOver, changePitcher, simulatePickoff,
 } from '@/lib/gameEngine'
 import { getTeamColorHex } from '@/lib/defaultData'
+import { saveGameState, loadGameState, clearGameState } from '@/lib/storage'
 import BaseballField from './BaseballField'
 import { BattingCommandPanel, PitchingCommandPanel } from './CommandPanel'
 
@@ -20,10 +21,18 @@ interface Props {
 
 export default function GameScreen({ appState, series, onGameEnd }: Props) {
   const playerTeam = appState.teams[appState.playerTeamIndex]
-  const playerHex = getTeamColorHex(playerTeam.color)
   const pitchMode = appState.pitchMode
 
   const [game, setGame] = useState<GameState>(() => {
+    const saved = loadGameState()
+    if (
+      saved &&
+      saved.homeTeam.id === series.homeTeam.id &&
+      saved.awayTeam.id === series.awayTeam.id &&
+      saved.phase !== 'GAME_OVER'
+    ) {
+      return saved
+    }
     const g = initGameState(series.homeTeam, series.awayTeam, appState.inningMode)
     if (pitchMode === 'final' || pitchMode === 'mid') {
       const { balls, strikes } = generateRandomCount()
@@ -35,8 +44,25 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
   const [pitchingCmd, setPitchingCmd] = useState<PitchingCommand>('ATTACK')
   const [runnerCmd, setRunnerCmd] = useState<RunnerCommand>(null)
   const [busy, setBusy] = useState(false)
+  const [notif, setNotif] = useState<{ text: string; sub: string; color: string } | null>(null)
   const gameRef = useRef(game)
   gameRef.current = game
+  const notifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-save
+  useEffect(() => {
+    if (game.phase === 'GAME_OVER') {
+      clearGameState()
+      return
+    }
+    saveGameState(game)
+  }, [game])
+
+  const showNotif = useCallback((text: string, sub = '', color = 'text-white') => {
+    if (notifTimerRef.current) clearTimeout(notifTimerRef.current)
+    setNotif({ text, sub, color })
+    notifTimerRef.current = setTimeout(() => setNotif(null), 2000)
+  }, [])
 
   const isPlayerBatting = game.isTop
     ? game.awayTeam.id === playerTeam.id
@@ -45,12 +71,13 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
   const batter = getCurrentBatter(game)
   const pitcher = getCurrentPitcher(game)
 
-  // ── Shared: handle post-result transition ─────────────────────
+  // ── Post-result transition ────────────────────────────────────
   const handlePostResult = useCallback(async (newGame: GameState) => {
     const isBetweenHalf = newGame.phase === 'BETWEEN_HALF'
     const gameOver = newGame.phase === 'GAME_OVER' || isGameOver(newGame)
 
     if (gameOver) {
+      clearGameState()
       const playerIsAway = newGame.awayTeam.id === playerTeam.id
       const playerWon = playerIsAway
         ? newGame.awayScore > newGame.homeScore
@@ -61,6 +88,9 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
     }
 
     if (isBetweenHalf) {
+      const nextIsTop = !newGame.isTop
+      const nextInning = newGame.isTop ? newGame.inning : newGame.inning + 1
+      showNotif(`${nextInning}회 ${nextIsTop ? '초' : '말'}`, '공격 시작', 'text-yellow-400')
       await sleep(800)
       setGame(g => {
         const next = startNextHalf(g)
@@ -75,8 +105,6 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
     setGame(g => {
       if (g.phase === 'PRE_PITCH') return g
       const next = { ...g, phase: 'PRE_PITCH' as const, lastPitch: null }
-      // 'final': always resolves a full at-bat, always generate new count
-      // 'mid': only generate new count when at-bat is OVER (not intermediate ball/strike/foul)
       const needsNewCount = pitchMode === 'final' || (pitchMode === 'mid' && g.phase === 'SHOW_AT_BAT')
       if (needsNewCount) {
         const { balls, strikes } = generateRandomCount()
@@ -85,9 +113,9 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
       return next
     })
     setBusy(false)
-  }, [pitchMode, playerTeam, onGameEnd])
+  }, [pitchMode, playerTeam, onGameEnd, showNotif])
 
-  // ── Execute one pitch (pitch-by-pitch mode) ───────────────────
+  // ── Pitch (pitch-by-pitch) ────────────────────────────────────
   const executePitch = useCallback(async () => {
     if (busy) return
     setBusy(true)
@@ -97,22 +125,24 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
     const pitching = !isPlayerBatting ? pitchingCmd : 'ATTACK'
 
     const pitchResult = simulateSinglePitch(
-      getCurrentBatter(g),
-      getCurrentPitcher(g),
-      g.balls, g.strikes,
-      batting, pitching, g.bases, g.outs, runnerCmd,
+      getCurrentBatter(g), getCurrentPitcher(g),
+      g.balls, g.strikes, batting, pitching, g.bases, g.outs, runnerCmd,
     )
-
     const newGame = applyPitchResult(g, pitchResult)
     setGame(newGame)
     setRunnerCmd(null)
 
+    if (pitchResult.atBatResult?.runsScored) {
+      const r = pitchResult.atBatResult.runsScored
+      showNotif(r >= 3 ? '빅이닝!' : '득점!', `${r}점 추가`, 'text-green-300')
+    }
+
     const isAtBatOver = pitchResult.kind === 'AT_BAT_OVER'
     await sleep(isAtBatOver ? 1600 : 900)
     await handlePostResult(newGame)
-  }, [busy, isPlayerBatting, battingCmd, pitchingCmd, runnerCmd, handlePostResult])
+  }, [busy, isPlayerBatting, battingCmd, pitchingCmd, runnerCmd, handlePostResult, showNotif])
 
-  // ── Execute final-pitch at-bat (one-decision mode) ────────────
+  // ── Final-pitch ───────────────────────────────────────────────
   const executeFinalPitch = useCallback(async () => {
     if (busy) return
     setBusy(true)
@@ -122,24 +152,49 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
     const pitching = !isPlayerBatting ? pitchingCmd : 'ATTACK'
 
     const pitchResult = simulateAtBatFinal(
-      getCurrentBatter(g),
-      getCurrentPitcher(g),
-      g.balls, g.strikes,
-      batting, pitching, g.bases, g.outs, runnerCmd,
+      getCurrentBatter(g), getCurrentPitcher(g),
+      g.balls, g.strikes, batting, pitching, g.bases, g.outs, runnerCmd,
     )
-
     const newGame = applyPitchResult(g, pitchResult)
     setGame(newGame)
     setRunnerCmd(null)
 
+    if (pitchResult.atBatResult?.runsScored) {
+      const r = pitchResult.atBatResult.runsScored
+      showNotif(r >= 3 ? '빅이닝!' : '득점!', `${r}점 추가`, 'text-green-300')
+    }
+
     await sleep(1600)
     await handlePostResult(newGame)
-  }, [busy, isPlayerBatting, battingCmd, pitchingCmd, runnerCmd, handlePostResult])
+  }, [busy, isPlayerBatting, battingCmd, pitchingCmd, runnerCmd, handlePostResult, showNotif])
 
   const executeCommand = pitchMode === 'final' ? executeFinalPitch : executePitch
 
-  // Auto-trigger when AI is batting (player controls pitching, not batting)
-  // Player always has control of both sides in this game
+  // ── Pickoff ───────────────────────────────────────────────────
+  const executePickoff = useCallback(async (base: 'first' | 'second' | 'third') => {
+    if (busy) return
+    setBusy(true)
+
+    const g = gameRef.current
+    const { result, newGame } = simulatePickoff(g, base)
+    setGame(newGame)
+
+    if (result === 'out') showNotif('견제 아웃!', '', 'text-red-400')
+    else if (result === 'error') showNotif('견제 에러!', '주자 진루', 'text-orange-400')
+
+    await sleep(1200)
+    await handlePostResult(newGame)
+  }, [busy, handlePostResult, showNotif])
+
+  // ── Pitcher change ────────────────────────────────────────────
+  const handleChangePitcher = useCallback(() => {
+    if (busy) return
+    const g = gameRef.current
+    const next = changePitcher(g)
+    const newPitcher = getCurrentPitcher(next)
+    setGame(next)
+    showNotif('투수 교체', `${newPitcher.name} 등판`, 'text-blue-300')
+  }, [busy, showNotif])
 
   const roundLabels: Record<string, string> = {
     wildcard: '와일드카드', semipo: '준플레이오프', po: '플레이오프', ks: '한국시리즈'
@@ -148,8 +203,19 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
   const canInteract = !busy && game.phase === 'PRE_PITCH'
 
   return (
-    <div className="bg-gray-950 text-white flex flex-col max-w-lg mx-auto lg:border-x lg:border-gray-800"
-      style={{ height: '100dvh' }}>
+    <div
+      className="bg-gray-950 text-white flex flex-col max-w-lg mx-auto lg:border-x lg:border-gray-800 relative"
+      style={{ height: '100dvh' }}
+    >
+      {/* ── Big notification overlay ────────────────────────────── */}
+      {notif && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="animate-notification text-center px-6">
+            <div className={`text-5xl font-black drop-shadow-lg leading-tight ${notif.color}`}>{notif.text}</div>
+            {notif.sub && <div className="text-xl text-gray-200 mt-1 drop-shadow">{notif.sub}</div>}
+          </div>
+        </div>
+      )}
 
       {/* ── Top Bar ──────────────────────────────────────────── */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-1.5 flex items-center justify-between text-xs flex-shrink-0">
@@ -166,34 +232,17 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
       {/* ── Score & Inning ────────────────────────────────────── */}
       <div className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex-shrink-0">
         <div className="flex items-center justify-between">
-          {/* Away */}
-          <ScoreTeam
-            team={game.awayTeam}
-            score={game.awayScore}
-            isBatting={game.isTop}
-            isPlayer={game.awayTeam.id === playerTeam.id}
-          />
-          {/* Inning */}
+          <ScoreTeam team={game.awayTeam} score={game.awayScore} isBatting={game.isTop} isPlayer={game.awayTeam.id === playerTeam.id} />
           <div className="text-center">
             <div className="text-xs text-gray-500">{game.inning}회</div>
-            <div className="text-2xl font-black text-yellow-400">
-              {game.isTop ? '△ 초' : '▽ 말'}
-            </div>
+            <div className="text-2xl font-black text-yellow-400">{game.isTop ? '△ 초' : '▽ 말'}</div>
             <div className="flex gap-1 justify-center mt-1">
               {[0,1,2].map(i => (
-                <div key={i} className={`w-2.5 h-2.5 rounded-full border ${
-                  i < game.outs ? 'bg-red-500 border-red-400' : 'border-gray-600'
-                }`} />
+                <div key={i} className={`w-2.5 h-2.5 rounded-full border ${i < game.outs ? 'bg-red-500 border-red-400' : 'border-gray-600'}`} />
               ))}
             </div>
           </div>
-          {/* Home */}
-          <ScoreTeam
-            team={game.homeTeam}
-            score={game.homeScore}
-            isBatting={!game.isTop}
-            isPlayer={game.homeTeam.id === playerTeam.id}
-          />
+          <ScoreTeam team={game.homeTeam} score={game.homeScore} isBatting={!game.isTop} isPlayer={game.homeTeam.id === playerTeam.id} />
         </div>
       </div>
 
@@ -218,64 +267,46 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
           </div>
         </div>
 
-        {/* ── BALL COUNT — the central element ──────────────────── */}
-        <CountBoard
-          balls={game.balls}
-          strikes={game.strikes}
-          outs={game.outs}
-          pitchMode={pitchMode}
-        />
+        {/* Count board */}
+        <CountBoard balls={game.balls} strikes={game.strikes} outs={game.outs} pitchMode={pitchMode} />
 
-        {/* Pitch result flash */}
-        {game.lastPitch && (
-          <PitchResultFlash
-            text={game.lastPitch.text}
-            kind={game.lastPitch.kind}
-            isAtBatOver={game.lastPitch.isAtBatOver}
-          />
-        )}
-
-        {/* Baseball field */}
+        {/* Baseball field — fixed, never moves */}
         <div className="flex justify-center flex-shrink-0">
           <div className="w-full max-w-[160px]">
-            <BaseballField
-              bases={game.bases}
-              outs={game.outs}
-              playerColor={playerTeam.color}
-              isPlayerBatting={isPlayerBatting}
-            />
+            <BaseballField bases={game.bases} outs={game.outs} playerColor={playerTeam.color} isPlayerBatting={isPlayerBatting} />
           </div>
+        </div>
+
+        {/* Result area — always occupies fixed height below field, no layout shift */}
+        <div className="h-12 flex-shrink-0 flex items-center">
+          {game.lastPitch && (
+            <PitchResultFlash text={game.lastPitch.text} kind={game.lastPitch.kind} isAtBatOver={game.lastPitch.isAtBatOver} />
+          )}
         </div>
 
         {/* Event log */}
         <EventLog events={game.events.slice(0, 2)} />
       </div>
 
-      {/* ── Command area (bottom) ────────────────────────────────── */}
+      {/* ── Command area ────────────────────────────────────────── */}
       <div className="border-t border-gray-800 bg-gray-950 p-2 flex-shrink-0">
         {game.phase === 'PRE_PITCH' && (
           isPlayerBatting ? (
             <BattingCommandPanel
-              bases={game.bases}
-              outs={game.outs}
-              isDisabled={!canInteract}
-              selectedBatting={battingCmd}
-              selectedRunner={runnerCmd}
-              onBatting={setBattingCmd}
-              onRunner={setRunnerCmd}
-              onConfirm={executeCommand}
-              playerColor={playerTeam.color}
+              bases={game.bases} outs={game.outs} isDisabled={!canInteract}
+              selectedBatting={battingCmd} selectedRunner={runnerCmd}
+              onBatting={setBattingCmd} onRunner={setRunnerCmd}
+              onConfirm={executeCommand} playerColor={playerTeam.color}
             />
           ) : (
             <PitchingCommandPanel
-              selected={pitchingCmd}
-              onChange={setPitchingCmd}
+              selected={pitchingCmd} onChange={setPitchingCmd}
               onConfirm={executeCommand}
-              onChangePitcher={() => setGame(g => changePitcher(g))}
-              isDisabled={!canInteract}
-              playerColor={playerTeam.color}
-              pitcherName={pitcher.name}
-              pitcherEra={pitcher.era}
+              onChangePitcher={handleChangePitcher}
+              onPickoff={executePickoff}
+              bases={game.bases}
+              isDisabled={!canInteract} playerColor={playerTeam.color}
+              pitcherName={pitcher.name} pitcherEra={pitcher.era}
             />
           )
         )}
@@ -291,9 +322,7 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
             <div className="text-yellow-400 font-bold">
               {game.inning}회 {game.isTop ? '초' : '말'} 공격 종료
             </div>
-            <div className="text-sm text-gray-400 mt-1">
-              {game.awayScore} - {game.homeScore}
-            </div>
+            <div className="text-sm text-gray-400 mt-1">{game.awayScore} - {game.homeScore}</div>
           </div>
         )}
 
@@ -321,15 +350,10 @@ function ScoreTeam({
       <div className={`text-xs font-bold mb-1 ${isPlayer ? 'text-yellow-300' : 'text-gray-300'}`}>
         {team.shortName} {isPlayer ? '⭐' : ''}
       </div>
-      <div
-        className="text-3xl font-black"
-        style={{ color: isBatting ? hex : '#9ca3af' }}
-      >
+      <div className="text-3xl font-black" style={{ color: isBatting ? hex : '#9ca3af' }}>
         {score}
       </div>
-      {isBatting && (
-        <div className="text-[9px] text-gray-400 mt-0.5">공격 중</div>
-      )}
+      {isBatting && <div className="text-[9px] text-gray-400 mt-0.5">공격 중</div>}
     </div>
   )
 }
@@ -350,44 +374,29 @@ function CountBoard({ balls, strikes, outs, pitchMode }: {
         </div>
       )}
       <div className="flex items-center justify-center gap-6 w-full">
-        {/* Balls */}
         <div className="flex flex-col items-center gap-1.5">
           <span className="text-[10px] text-gray-500 uppercase tracking-wider">볼</span>
           <div className="flex gap-1">
             {[0,1,2,3].map(i => (
-              <div
-                key={i}
-                className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-                  i < balls
-                    ? 'bg-green-500 border-green-400 shadow-green-500/50 shadow-sm'
-                    : 'border-gray-600 bg-gray-800'
-                }`}
-              />
+              <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+                i < balls ? 'bg-green-500 border-green-400 shadow-green-500/50 shadow-sm' : 'border-gray-600 bg-gray-800'
+              }`} />
             ))}
           </div>
         </div>
-
-        {/* Count text */}
         <div className="text-center">
           <div className="text-3xl font-black font-mono text-white tracking-wider">
             {balls}<span className="text-gray-600">-</span>{strikes}
           </div>
           <div className="text-[10px] text-gray-500 mt-0.5">볼-스트라이크</div>
         </div>
-
-        {/* Strikes */}
         <div className="flex flex-col items-center gap-1.5">
           <span className="text-[10px] text-gray-500 uppercase tracking-wider">스트라이크</span>
           <div className="flex gap-1">
             {[0,1,2].map(i => (
-              <div
-                key={i}
-                className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
-                  i < strikes
-                    ? 'bg-red-500 border-red-400 shadow-red-500/50 shadow-sm'
-                    : 'border-gray-600 bg-gray-800'
-                }`}
-              />
+              <div key={i} className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
+                i < strikes ? 'bg-red-500 border-red-400 shadow-red-500/50 shadow-sm' : 'border-gray-600 bg-gray-800'
+              }`} />
             ))}
           </div>
         </div>
@@ -407,9 +416,8 @@ function PitchResultFlash({ text, kind, isAtBatOver }: {
     ball: 'bg-green-900/20', strike: 'bg-red-900/20', foul: 'bg-yellow-900/10',
     hit: 'bg-yellow-900/20', out: 'bg-red-900/20', run: 'bg-green-900/30', steal: 'bg-blue-900/20',
   }
-
   return (
-    <div className={`rounded-xl px-4 py-3 text-center animate-bounce-once ${bgColors[kind] ?? 'bg-gray-800'}`}>
+    <div className={`w-full rounded-xl px-4 py-2 text-center animate-bounce-once ${bgColors[kind] ?? 'bg-gray-800'}`}>
       <div className={`font-black ${isAtBatOver ? 'text-2xl' : 'text-xl'} ${colors[kind] ?? 'text-white'}`}>
         {text}
       </div>

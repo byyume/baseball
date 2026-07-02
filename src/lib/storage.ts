@@ -1,4 +1,4 @@
-import type { AppState } from './types'
+import type { AppState, GameState } from './types'
 
 const KEY = 'kbo-mgr-v1'
 
@@ -18,4 +18,21 @@ export function loadGame(): AppState | null {
 
 export function clearSave(): void {
   try { localStorage.removeItem(KEY) } catch {}
+}
+
+const GAME_KEY = 'kbo-mgr-game-v1'
+
+export function saveGameState(state: GameState): void {
+  try { localStorage.setItem(GAME_KEY, JSON.stringify(state)) } catch {}
+}
+
+export function loadGameState(): GameState | null {
+  try {
+    const raw = localStorage.getItem(GAME_KEY)
+    return raw ? (JSON.parse(raw) as GameState) : null
+  } catch { return null }
+}
+
+export function clearGameState(): void {
+  try { localStorage.removeItem(GAME_KEY) } catch {}
 }

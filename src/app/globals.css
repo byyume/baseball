@@ -10,6 +10,16 @@
   animation: bounce-once 0.35s ease-out forwards;
 }
 
+@keyframes notification-in {
+  0%   { transform: scale(0.6) translateY(-20px); opacity: 0; }
+  60%  { transform: scale(1.08) translateY(0); opacity: 1; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.animate-notification {
+  animation: notification-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
 }
