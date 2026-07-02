@@ -291,15 +291,19 @@ export function buildTeamsFromKBO(
   playerTeamId: number,
   overrides: Partial<{ name: string; shortName: string; color: TeamColor }>[] = [],
 ): { teams: Team[]; playerIndex: number } {
-  // Place the player's chosen team at index 4 (5th place).
-  // The team originally at index 4 takes the player's original position.
-  const kboOrder = [...KBO_TEAMS]
-  const playerOriginalIdx = kboOrder.findIndex(t => t.id === playerTeamId)
-  if (playerOriginalIdx === -1) throw new Error('Unknown team id')
+  const playerDef = KBO_TEAMS.find(t => t.id === playerTeamId)
+  if (!playerDef) throw new Error('Unknown team id')
 
-  // Swap player team with index 4 team
-  const reordered = [...kboOrder]
-  ;[reordered[4], reordered[playerOriginalIdx]] = [reordered[playerOriginalIdx], reordered[4]]
+  // Randomly pick 4 opponents from the remaining 9 teams, then sort by wins desc
+  const others = KBO_TEAMS.filter(t => t.id !== playerTeamId)
+  for (let i = others.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[others[i], others[j]] = [others[j], others[i]]
+  }
+  const top4 = others.slice(0, 4).sort((a, b) => b.wins - a.wins)
+
+  // Final standings: [1위, 2위, 3위, 4위, 5위(player)]
+  const reordered = [...top4, playerDef]
 
   const teams: Team[] = reordered.map((def, rank) => {
     const ovr = overrides[rank] ?? {}
