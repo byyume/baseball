@@ -99,7 +99,7 @@ export function BattingCommandPanel({
       <button
         disabled={isDisabled}
         onClick={onConfirm}
-        className="w-full py-4 rounded-2xl text-white font-black text-lg tracking-wide
+        className="w-full py-3 rounded-2xl text-white font-black text-lg tracking-wide
           transition-all duration-100 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shadow-xl"
         style={{ backgroundColor: hex }}
       >
@@ -160,7 +160,7 @@ export function PitchingCommandPanel({
               key={cmd}
               disabled={isDisabled}
               onClick={() => onChange(cmd)}
-              className={`flex flex-col items-center gap-1 px-2 py-3 rounded-xl border-2 text-xs font-bold transition-all
+              className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl border-2 text-xs font-bold transition-all
                 ${active ? 'scale-105 shadow-lg text-white' : 'border-gray-700 bg-gray-900 text-gray-300 hover:border-gray-500 active:scale-95'}`}
               style={active ? { backgroundColor: hex + '25', borderColor: hex } : {}}
             >
@@ -174,7 +174,7 @@ export function PitchingCommandPanel({
       <button
         onClick={onChangePitcher}
         disabled={isDisabled}
-        className="w-full py-2 rounded-xl border border-gray-700 bg-gray-900 text-gray-400
+        className="w-full py-1.5 rounded-xl border border-gray-700 bg-gray-900 text-gray-400
           hover:border-gray-500 text-xs font-bold transition-all active:scale-95 disabled:opacity-40"
       >
         🔄 투수교체 — {pitcherName} (ERA {pitcherEra.toFixed(2)})
@@ -183,7 +183,7 @@ export function PitchingCommandPanel({
       <button
         disabled={isDisabled}
         onClick={onConfirm}
-        className="w-full py-4 rounded-2xl text-white font-black text-lg tracking-wide
+        className="w-full py-3 rounded-2xl text-white font-black text-lg tracking-wide
           transition-all active:scale-95 disabled:opacity-40 shadow-xl"
         style={{ backgroundColor: hex }}
       >

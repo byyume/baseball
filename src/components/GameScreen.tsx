@@ -148,10 +148,11 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
   const canInteract = !busy && game.phase === 'PRE_PITCH'
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white flex flex-col max-w-lg mx-auto lg:border-x lg:border-gray-800">
+    <div className="bg-gray-950 text-white flex flex-col max-w-lg mx-auto lg:border-x lg:border-gray-800"
+      style={{ height: '100dvh' }}>
 
       {/* ── Top Bar ──────────────────────────────────────────── */}
-      <div className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex items-center justify-between text-xs">
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-1.5 flex items-center justify-between text-xs flex-shrink-0">
         <span className="text-yellow-400 font-bold">{roundLabels[series.round]}</span>
         <span className="text-gray-400">
           {series.homeTeam.shortName} {series.homeWins}승 - {series.awayWins}승 {series.awayTeam.shortName}
@@ -163,7 +164,7 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
       </div>
 
       {/* ── Score & Inning ────────────────────────────────────── */}
-      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3">
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-2 flex-shrink-0">
         <div className="flex items-center justify-between">
           {/* Away */}
           <ScoreTeam
@@ -197,10 +198,10 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
       </div>
 
       {/* ── Main content ────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col p-3 gap-3 overflow-y-auto">
+      <div className="flex-1 min-h-0 flex flex-col p-2 gap-2 overflow-y-auto">
 
         {/* Matchup row */}
-        <div className="flex items-center justify-between bg-gray-900 rounded-xl px-4 py-2.5 text-sm">
+        <div className="flex items-center justify-between bg-gray-900 rounded-xl px-3 py-2 text-sm flex-shrink-0">
           <div className="text-center">
             <div className="text-[10px] text-gray-500 mb-0.5">투수</div>
             <div className="font-bold text-white">{pitcher.name}</div>
@@ -235,8 +236,8 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
         )}
 
         {/* Baseball field */}
-        <div className="flex justify-center">
-          <div className="w-full max-w-[240px]">
+        <div className="flex justify-center flex-shrink-0">
+          <div className="w-full max-w-[160px]">
             <BaseballField
               bases={game.bases}
               outs={game.outs}
@@ -247,11 +248,11 @@ export default function GameScreen({ appState, series, onGameEnd }: Props) {
         </div>
 
         {/* Event log */}
-        <EventLog events={game.events.slice(0, 4)} />
+        <EventLog events={game.events.slice(0, 2)} />
       </div>
 
       {/* ── Command area (bottom) ────────────────────────────────── */}
-      <div className="border-t border-gray-800 bg-gray-950 p-3">
+      <div className="border-t border-gray-800 bg-gray-950 p-2 flex-shrink-0">
         {game.phase === 'PRE_PITCH' && (
           isPlayerBatting ? (
             <BattingCommandPanel
@@ -321,7 +322,7 @@ function ScoreTeam({
         {team.shortName} {isPlayer ? '⭐' : ''}
       </div>
       <div
-        className="text-4xl font-black"
+        className="text-3xl font-black"
         style={{ color: isBatting ? hex : '#9ca3af' }}
       >
         {score}
@@ -342,21 +343,21 @@ function CountBoard({ balls, strikes, outs, pitchMode }: {
     null
 
   return (
-    <div className="bg-gray-900 rounded-2xl px-6 py-4 flex flex-col items-center gap-3">
+    <div className="bg-gray-900 rounded-2xl px-4 py-3 flex flex-col items-center gap-2 flex-shrink-0">
       {modeLabel && (
         <div className={`text-[10px] uppercase tracking-widest font-bold ${modeLabel.cls}`}>
           {modeLabel.text}
         </div>
       )}
-      <div className="flex items-center justify-center gap-8 w-full">
+      <div className="flex items-center justify-center gap-6 w-full">
         {/* Balls */}
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-1.5">
           <span className="text-[10px] text-gray-500 uppercase tracking-wider">볼</span>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1">
             {[0,1,2,3].map(i => (
               <div
                 key={i}
-                className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+                className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
                   i < balls
                     ? 'bg-green-500 border-green-400 shadow-green-500/50 shadow-sm'
                     : 'border-gray-600 bg-gray-800'
@@ -368,20 +369,20 @@ function CountBoard({ balls, strikes, outs, pitchMode }: {
 
         {/* Count text */}
         <div className="text-center">
-          <div className="text-4xl font-black font-mono text-white tracking-wider">
+          <div className="text-3xl font-black font-mono text-white tracking-wider">
             {balls}<span className="text-gray-600">-</span>{strikes}
           </div>
           <div className="text-[10px] text-gray-500 mt-0.5">볼-스트라이크</div>
         </div>
 
         {/* Strikes */}
-        <div className="flex flex-col items-center gap-2">
+        <div className="flex flex-col items-center gap-1.5">
           <span className="text-[10px] text-gray-500 uppercase tracking-wider">스트라이크</span>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1">
             {[0,1,2].map(i => (
               <div
                 key={i}
-                className={`w-5 h-5 rounded-full border-2 transition-all duration-200 ${
+                className={`w-4 h-4 rounded-full border-2 transition-all duration-200 ${
                   i < strikes
                     ? 'bg-red-500 border-red-400 shadow-red-500/50 shadow-sm'
                     : 'border-gray-600 bg-gray-800'
